@@ -45,9 +45,65 @@ function chiediPermessoNotifiche() {
   } catch {}
 }
 
+// ---------- notifiche di sistema, suono e vibrazione ----------
+function chiediPermessoNotifiche() {
+  try {
+    if ("Notification" in window && Notification.permission === "default") {
+      Notification.requestPermission();
+    }
+  } catch {}
+}
+
+// Funzione per riprodurre un segnale acustico (Beep) usando l'AudioContext del browser
+function riproduciSuonoFineRecupero() {
+  try {
+    const AudioContext = window.AudioContext || window.webkitAudioContext;
+    if (!AudioContext) return;
+    const ctx = new AudioContext();
+    
+    // Primo bip
+    const osc1 = ctx.createOscillator();
+    const gain1 = ctx.createGain();
+    osc1.type = "sine";
+    osc1.frequency.setValueAtTime(880, ctx.currentTime); // Nota La (A5) bella squillante
+    gain1.gain.setValueAtTime(0.1, ctx.currentTime);
+    gain1.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.3);
+    osc1.connect(gain1);
+    gain1.connect(ctx.destination);
+    osc1.start();
+    osc1.stop(ctx.currentTime + 0.3);
+
+    // Secondo bip (leggermente ritardato per fare un doppio "bip-bip")
+    setTimeout(() => {
+      const osc2 = ctx.createOscillator();
+      const gain2 = ctx.createGain();
+      osc2.type = "sine";
+      osc2.frequency.setValueAtTime(880, ctx.currentTime);
+      gain2.gain.setValueAtTime(0.1, ctx.currentTime);
+      gain2.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.3);
+      osc2.connect(gain2);
+      gain2.connect(ctx.destination);
+      osc2.start();
+      osc2.stop(ctx.currentTime + 0.3);
+    }, 150);
+
+  } catch (e) {
+    console.log("AudioContext non avviabile:", e);
+  }
+}
+
 async function notificaFineRecupero(nomeEsercizio) {
-  // vibrazione: non ha effetto su iPhone (Safari non la supporta), funziona su Android
-  try { if (navigator.vibrate) navigator.vibrate([200, 100, 200]); } catch {}
+  // 1. Riproduci il suono (funziona sia su iOS che su Android)
+  riproduciSuonoFineRecupero();
+
+  // 2. Vibrazione (funziona su Android, ignorata su iOS)
+  try { 
+    if (navigator.vibrate) {
+      navigator.vibrate([200, 100, 200]); 
+    }
+  } catch {}
+
+  // 3. Notifica Push a schermo
   try {
     if ("Notification" in window && Notification.permission === "granted" && "serviceWorker" in navigator) {
       const reg = await navigator.serviceWorker.ready;
