@@ -36,15 +36,6 @@ function rimuoviTimerSalvato(esercizioId) {
   try { localStorage.removeItem("restTimer_" + esercizioId); } catch {}
 }
 
-// ---------- notifiche di sistema ----------
-function chiediPermessoNotifiche() {
-  try {
-    if ("Notification" in window && Notification.permission === "default") {
-      Notification.requestPermission();
-    }
-  } catch {}
-}
-
 // ---------- notifiche di sistema, suono e vibrazione ----------
 function chiediPermessoNotifiche() {
   try {
