@@ -32,6 +32,29 @@ export async function eliminaScheda(id) {
   if (error) throw error;
 }
 
+// ---------- Sessione allenamento ----------
+// "Inizia allenamento": azzera eventuali spunte rimaste da una sessione
+// precedente non terminata correttamente, poi segna la scheda come attiva.
+export async function iniziaAllenamento(schedaId, esercizioIds) {
+  if (esercizioIds.length > 0) {
+    const { error: e1 } = await supabase.from("serie").update({ fatta: false }).in("esercizio_id", esercizioIds);
+    if (e1) throw e1;
+  }
+  const { error: e2 } = await supabase.from("schede").update({ sessione_attiva: true }).eq("id", schedaId);
+  if (e2) throw e2;
+}
+
+// "Termina allenamento": i carichi sono gia' salvati nello storico (avviene
+// ad ogni spunta), qui azzeriamo solo le spunte per la prossima volta.
+export async function terminaAllenamento(schedaId, esercizioIds) {
+  if (esercizioIds.length > 0) {
+    const { error: e1 } = await supabase.from("serie").update({ fatta: false }).in("esercizio_id", esercizioIds);
+    if (e1) throw e1;
+  }
+  const { error: e2 } = await supabase.from("schede").update({ sessione_attiva: false }).eq("id", schedaId);
+  if (e2) throw e2;
+}
+
 // ---------- Esercizi ----------
 export async function aggiungiEsercizio(schedaId, nome, ordine) {
   const { data, error } = await supabase
@@ -96,6 +119,11 @@ export async function fetchLibreria() {
   const { data, error } = await supabase.from("libreria_esercizi").select("nome").order("nome");
   if (error) throw error;
   return (data || []).map((r) => r.nome);
+}
+
+export async function aggiungiEsercizioLibreria(nome) {
+  const { error } = await supabase.from("libreria_esercizi").upsert({ nome }, { onConflict: "nome" });
+  if (error) throw error;
 }
 
 export async function fetchLog(esercizioNome) {
