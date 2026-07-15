@@ -36,7 +36,46 @@ function rimuoviTimerSalvato(esercizioId) {
   try { localStorage.removeItem("restTimer_" + esercizioId); } catch {}
 }
 
-// ---------- notifiche di sistema, suono e vibrazione ----------
+// ---------- notifiche di sistema ----------
+// ---------- suono di fine recupero ----------
+// iOS richiede che l'AudioContext venga creato/sbloccato durante un gesto
+// dell'utente (es. il tap sul quadratino): lo creiamo una volta sola e lo
+// riusiamo anche quando il beep parte da solo, senza un nuovo tap.
+let audioCtxSingleton = null;
+function sbloccaAudio() {
+  try {
+    const Ctx = window.AudioContext || window.webkitAudioContext;
+    if (!Ctx) return;
+    if (!audioCtxSingleton) audioCtxSingleton = new Ctx();
+    if (audioCtxSingleton.state === "suspended") audioCtxSingleton.resume().catch(() => {});
+  } catch {}
+}
+function suonaBeepFineRecupero() {
+  try {
+    const ctx = audioCtxSingleton;
+    if (!ctx) return;
+    const suona = (freq, delay) => {
+      setTimeout(() => {
+        try {
+          const o = ctx.createOscillator();
+          const g = ctx.createGain();
+          o.type = "sine";
+          o.frequency.value = freq;
+          g.gain.setValueAtTime(0.0001, ctx.currentTime);
+          g.gain.exponentialRampToValueAtTime(0.28, ctx.currentTime + 0.02);
+          g.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + 0.32);
+          o.connect(g);
+          g.connect(ctx.destination);
+          o.start();
+          o.stop(ctx.currentTime + 0.35);
+        } catch {}
+      }, delay);
+    };
+    suona(880, 0);
+    suona(1046, 200);
+  } catch {}
+}
+
 function chiediPermessoNotifiche() {
   try {
     if ("Notification" in window && Notification.permission === "default") {
@@ -45,56 +84,9 @@ function chiediPermessoNotifiche() {
   } catch {}
 }
 
-// Funzione per riprodurre un segnale acustico (Beep) usando l'AudioContext del browser
-function riproduciSuonoFineRecupero() {
-  try {
-    const AudioContext = window.AudioContext || window.webkitAudioContext;
-    if (!AudioContext) return;
-    const ctx = new AudioContext();
-    
-    // Primo bip
-    const osc1 = ctx.createOscillator();
-    const gain1 = ctx.createGain();
-    osc1.type = "sine";
-    osc1.frequency.setValueAtTime(880, ctx.currentTime); // Nota La (A5) bella squillante
-    gain1.gain.setValueAtTime(0.1, ctx.currentTime);
-    gain1.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.3);
-    osc1.connect(gain1);
-    gain1.connect(ctx.destination);
-    osc1.start();
-    osc1.stop(ctx.currentTime + 0.3);
-
-    // Secondo bip (leggermente ritardato per fare un doppio "bip-bip")
-    setTimeout(() => {
-      const osc2 = ctx.createOscillator();
-      const gain2 = ctx.createGain();
-      osc2.type = "sine";
-      osc2.frequency.setValueAtTime(880, ctx.currentTime);
-      gain2.gain.setValueAtTime(0.1, ctx.currentTime);
-      gain2.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.3);
-      osc2.connect(gain2);
-      gain2.connect(ctx.destination);
-      osc2.start();
-      osc2.stop(ctx.currentTime + 0.3);
-    }, 150);
-
-  } catch (e) {
-    console.log("AudioContext non avviabile:", e);
-  }
-}
-
 async function notificaFineRecupero(nomeEsercizio) {
-  // 1. Riproduci il suono (funziona sia su iOS che su Android)
-  riproduciSuonoFineRecupero();
-
-  // 2. Vibrazione (funziona su Android, ignorata su iOS)
-  try { 
-    if (navigator.vibrate) {
-      navigator.vibrate([200, 100, 200]); 
-    }
-  } catch {}
-
-  // 3. Notifica Push a schermo
+  // vibrazione: non ha effetto su iPhone (Safari non la supporta), funziona su Android
+  try { if (navigator.vibrate) navigator.vibrate([200, 100, 200]); } catch {}
   try {
     if ("Notification" in window && Notification.permission === "granted" && "serviceWorker" in navigator) {
       const reg = await navigator.serviceWorker.ready;
@@ -130,6 +122,7 @@ function RestTimerGauge({ endAt, totale, nome, onFinish }) {
     if (rimasti <= 0 && !notificatoRef.current) {
       notificatoRef.current = true;
       notificaFineRecupero(nome);
+      suonaBeepFineRecupero();
       const t = setTimeout(onFinish, 2200);
       return () => clearTimeout(t);
     }
@@ -197,6 +190,7 @@ function EsercizioCard({ esercizio, onLocalUpdate, onDelete, onStartRest, timerA
     onLocalUpdate({ tipo: "toggleSerie", serie, esercizio });
     if (nuovoStato) {
       chiediPermessoNotifiche();
+      sbloccaAudio();
       onStartRest(esercizio.id, esercizio.recupero, esercizio.nome);
     }
   };
@@ -222,6 +216,18 @@ function EsercizioCard({ esercizio, onLocalUpdate, onDelete, onStartRest, timerA
       <div className="ex-head">
         <div>
           <div className="ex-name">{esercizio.nome}</div>
+          <input
+            className="ex-note"
+            type="text"
+            placeholder="Aggiungi una nota..."
+            defaultValue={esercizio.note || ""}
+            onBlur={(e) => {
+              if (e.target.value !== (esercizio.note || "")) {
+                onLocalUpdate({ tipo: "aggiornaEsercizio", esercizioId: esercizio.id, campi: { note: e.target.value } });
+              }
+            }}
+            onKeyDown={(e) => e.key === "Enter" && e.target.blur()}
+          />
           {editRecupero ? (
             <div className="ex-rest-edit">
               <input
@@ -831,6 +837,10 @@ const css = `
 .ex-card { background: var(--card); border: 1px solid var(--line); border-radius: 22px; padding: 16px; margin-bottom: 12px; }
 .ex-head { display: flex; align-items: flex-start; justify-content: space-between; margin-bottom: 10px; }
 .ex-name { font-weight: 700; font-size: 15.5px; }
+.ex-note { display: block; background: none; border: none; border-bottom: 1px dashed transparent; color: var(--text-dim); font-size: 12.5px; font-style: italic; padding: 3px 0 5px; width: 100%; font-family: 'Inter', sans-serif; }
+.ex-note:hover, .ex-note:focus { border-bottom-color: var(--line); }
+.ex-note:focus { outline: none; }
+.ex-note::placeholder { color: var(--text-dim); opacity: 0.6; }
 .ex-rest { display: flex; align-items: center; gap: 4px; background: none; border: none; color: var(--ember); font-size: 12px; padding: 3px 0; cursor: pointer; font-family: 'Roboto Mono', monospace; }
 .ex-rest-edit { display: flex; align-items: center; gap: 5px; margin-top: 2px; }
 .ex-rest-input { background: var(--bg); border: 1px solid var(--ember); color: var(--ember); border-radius: 8px; width: 56px; padding: 3px 7px; font-size: 12px; font-family: 'Roboto Mono', monospace; }
