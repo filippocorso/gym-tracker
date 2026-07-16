@@ -134,6 +134,23 @@ export async function programmaNotificaTelegram(testo, secondiDaOra) {
   if (error) throw error;
 }
 
+// ---------- Misure corporee ----------
+export async function fetchMisure() {
+  const { data, error } = await supabase.from("misure").select("*").order("data", { ascending: true });
+  if (error) throw error;
+  return data || [];
+}
+
+export async function aggiungiMisura(valori) {
+  const { error } = await supabase.from("misure").insert(valori);
+  if (error) throw error;
+}
+
+export async function eliminaMisura(id) {
+  const { error } = await supabase.from("misure").delete().eq("id", id);
+  if (error) throw error;
+}
+
 export async function fetchLog(esercizioNome) {
   const { data, error } = await supabase
     .from("log_carichi")

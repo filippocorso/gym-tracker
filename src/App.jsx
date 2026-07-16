@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback, useRef } from "react";
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine } from "recharts";
-import { Plus, Trash2, Pencil, ChevronLeft, Check, TrendingUp, TrendingDown, Dumbbell, Clock, X, Minus, Home as HomeIcon, Play, Square } from "lucide-react";
+import { Plus, Trash2, Pencil, ChevronLeft, Check, TrendingUp, TrendingDown, Dumbbell, Clock, X, Minus, Home as HomeIcon, Play, Square, Ruler } from "lucide-react";
 import * as db from "./data";
 
 function formatTempo(sec) {
@@ -626,12 +626,139 @@ function VistaHome({ schede, libreria, tuttiLog, onOpenScheda, onOpenEsercizio, 
   );
 }
 
+// ---------- Misure corporee ----------
+const METRICHE = [
+  { chiave: "peso", label: "Peso", unita: "kg" },
+  { chiave: "petto", label: "Petto", unita: "cm" },
+  { chiave: "vita", label: "Vita", unita: "cm" },
+  { chiave: "gamba_dx", label: "Gamba dx", unita: "cm" },
+  { chiave: "gamba_sx", label: "Gamba sx", unita: "cm" },
+  { chiave: "bicipite_dx", label: "Bicipite dx", unita: "cm" },
+  { chiave: "bicipite_sx", label: "Bicipite sx", unita: "cm" },
+];
+
+function ModalNuovaMisura({ onAdd, onClose }) {
+  const oggi = new Date().toISOString().slice(0, 10);
+  const [valori, setValori] = useState({ data: oggi });
+  const setCampo = (chiave, val) => setValori((v) => ({ ...v, [chiave]: val === "" ? undefined : +val }));
+
+  const salva = () => {
+    const payload = { data: valori.data || oggi };
+    METRICHE.forEach((m) => { if (valori[m.chiave] !== undefined) payload[m.chiave] = valori[m.chiave]; });
+    onAdd(payload);
+  };
+
+  return (
+    <div className="modal-backdrop" onClick={onClose}>
+      <div className="modal" onClick={(e) => e.stopPropagation()}>
+        <div className="modal-title">Nuova misurazione</div>
+        <input
+          className="modal-input" type="date" value={valori.data || oggi}
+          onChange={(e) => setValori((v) => ({ ...v, data: e.target.value }))}
+          style={{ marginBottom: 14 }}
+        />
+        <div className="misura-form-grid">
+          {METRICHE.map((m) => (
+            <div className="misura-field" key={m.chiave}>
+              <label>{m.label}</label>
+              <div className="misura-field-input">
+                <input type="number" inputMode="decimal" placeholder="—"
+                  onChange={(e) => setCampo(m.chiave, e.target.value)} />
+                <span>{m.unita}</span>
+              </div>
+            </div>
+          ))}
+        </div>
+        <div className="modal-actions">
+          <button className="btn-ghost" onClick={onClose}>Annulla</button>
+          <button className="btn-primary" onClick={salva}>Salva</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function VistaMisure({ misure, onAdd, onDelete }) {
+  const [selezionata, setSelezionata] = useState("peso");
+  const [modalOpen, setModalOpen] = useState(false);
+  const metrica = METRICHE.find((m) => m.chiave === selezionata);
+
+  const punti = misure
+    .filter((m) => m[selezionata] !== null && m[selezionata] !== undefined)
+    .map((m) => ({ data: formatData(m.data), valore: m[selezionata] }));
+  const primo = punti[0]?.valore ?? 0;
+  const ultimo = punti[punti.length - 1]?.valore ?? 0;
+  const delta = +(ultimo - primo).toFixed(1);
+
+  return (
+    <div className="view">
+      <div className="topbar topbar--flat"><div className="topbar-title topbar-title--left">Misure</div></div>
+
+      <div className="misura-tabs">
+        {METRICHE.map((m) => (
+          <button key={m.chiave} className={`misura-tab ${selezionata === m.chiave ? "misura-tab--active" : ""}`}
+            onClick={() => setSelezionata(m.chiave)}>
+            {m.label}
+          </button>
+        ))}
+      </div>
+
+      {punti.length === 0 ? (
+        <div className="empty-state"><Dumbbell size={28} /><p>Ancora nessun dato per {metrica.label.toLowerCase()}.<br />Aggiungi una misurazione per iniziare.</p></div>
+      ) : (
+        <>
+          {punti.length > 1 && (
+            <div className="trend-banner trend-banner--flat">
+              <TrendingUp size={16} />
+              <span>{delta > 0 ? "+" : ""}{delta} {metrica.unita} da inizio periodo</span>
+            </div>
+          )}
+          <div className="chart-card">
+            <ResponsiveContainer width="100%" height={220}>
+              <LineChart data={punti} margin={{ top: 10, right: 16, left: -18, bottom: 0 }}>
+                <CartesianGrid stroke="var(--line)" strokeDasharray="3 5" vertical={false} />
+                <XAxis dataKey="data" stroke="var(--text-dim)" fontSize={11} tickLine={false} axisLine={false} />
+                <YAxis stroke="var(--text-dim)" fontSize={11} tickLine={false} axisLine={false} domain={["dataMin - 2", "dataMax + 2"]} />
+                <Tooltip contentStyle={{ background: "var(--card)", border: "1px solid var(--line)", borderRadius: 8, fontSize: 12 }} labelStyle={{ color: "var(--text-dim)" }} />
+                <Line type="monotone" dataKey="valore" stroke="var(--accent)" strokeWidth={2.5} dot={{ r: 3, fill: "var(--accent)" }} activeDot={{ r: 5 }} />
+              </LineChart>
+            </ResponsiveContainer>
+          </div>
+        </>
+      )}
+
+      <div className="log-list">
+        <div className="log-list-title">Storico misurazioni</div>
+        {[...misure].reverse().map((m) => (
+          <div className="misura-log-row" key={m.id}>
+            <div className="misura-log-data">{formatData(m.data)}</div>
+            <div className="misura-log-chips">
+              {METRICHE.filter((mt) => m[mt.chiave] !== null && m[mt.chiave] !== undefined).map((mt) => (
+                <span className="misura-chip" key={mt.chiave}>{mt.label} {m[mt.chiave]}{mt.unita}</span>
+              ))}
+            </div>
+            <button className="icon-btn icon-btn--danger" onClick={() => onDelete(m.id)} aria-label="Elimina misurazione">
+              <Trash2 size={14} />
+            </button>
+          </div>
+        ))}
+      </div>
+
+      <button className="add-ex-btn" onClick={() => setModalOpen(true)}><Plus size={16} /> Nuova misurazione</button>
+      {modalOpen && (
+        <ModalNuovaMisura onClose={() => setModalOpen(false)} onAdd={(v) => { onAdd(v); setModalOpen(false); }} />
+      )}
+    </div>
+  );
+}
+
 // ---------- App ----------
 export default function App() {
   const [tab, setTab] = useState("home");
   const [schede, setSchede] = useState([]);
   const [libreria, setLibreria] = useState([]);
   const [tuttiLog, setTuttiLog] = useState([]);
+  const [misure, setMisure] = useState([]);
   const [caricamento, setCaricamento] = useState(true);
   const [errore, setErrore] = useState(null);
 
@@ -641,10 +768,11 @@ export default function App() {
 
   const ricaricaTutto = useCallback(async () => {
     try {
-      const [s, l, log] = await Promise.all([db.fetchSchede(), db.fetchLibreria(), db.fetchTuttiILog()]);
+      const [s, l, log, m] = await Promise.all([db.fetchSchede(), db.fetchLibreria(), db.fetchTuttiILog(), db.fetchMisure()]);
       setSchede(s);
       setLibreria(l);
       setTuttiLog(log);
+      setMisure(m);
       setErrore(null);
     } catch (e) {
       setErrore(e.message || "Errore di connessione a Supabase");
@@ -778,13 +906,19 @@ export default function App() {
             onOpenScheda={setSchedaAperta} onOpenEsercizio={setEsercizioAperto} onGoSchede={() => setTab("schede")} />
         ) : tab === "schede" ? (
           <VistaSchede schede={schede} onOpen={setSchedaAperta} onCreate={createScheda} onDelete={deleteScheda} onRename={renameScheda} />
-        ) : (
+        ) : tab === "esercizi" ? (
           <VistaEsercizi
             libreria={libreria}
             tuttiLog={tuttiLog}
             onOpen={setEsercizioAperto}
             onDelete={async (nome) => { await db.eliminaDallaLibreria(nome); await ricaricaTutto(); }}
             onAdd={async (nome) => { await db.aggiungiEsercizioLibreria(nome); await ricaricaTutto(); }}
+          />
+        ) : (
+          <VistaMisure
+            misure={misure}
+            onAdd={async (valori) => { await db.aggiungiMisura(valori); await ricaricaTutto(); }}
+            onDelete={async (id) => { await db.eliminaMisura(id); await ricaricaTutto(); }}
           />
         )}
 
@@ -793,6 +927,7 @@ export default function App() {
             <button className={`nav-btn ${tab === "home" ? "nav-btn--active" : ""}`} onClick={() => setTab("home")}><HomeIcon size={18} /><span>Home</span></button>
             <button className={`nav-btn ${tab === "schede" ? "nav-btn--active" : ""}`} onClick={() => setTab("schede")}><Dumbbell size={18} /><span>Schede</span></button>
             <button className={`nav-btn ${tab === "esercizi" ? "nav-btn--active" : ""}`} onClick={() => setTab("esercizi")}><TrendingUp size={18} /><span>Esercizi</span></button>
+            <button className={`nav-btn ${tab === "misure" ? "nav-btn--active" : ""}`} onClick={() => setTab("misure")}><Ruler size={18} /><span>Misure</span></button>
           </nav>
         )}
       </div>
@@ -802,15 +937,15 @@ export default function App() {
 
 const css = `
 :root {
-  --bg: #14171d;
-  --card: #20242d;
-  --line: #343b48;
-  --text: #f1f2f5;
-  --text-dim: #8b93a3;
-  --accent: #4a97ff;
-  --accent-soft: rgba(74,151,255,0.16);
+  --bg: #0b0b0d;
+  --card: #19191c;
+  --line: #2d2d31;
+  --text: #f6f5f3;
+  --text-dim: #8f8d8a;
+  --accent: #ff7a29;
+  --accent-soft: rgba(255,122,41,0.16);
   --good: #4fb787;
-  --ember: #ff9f43;
+  --ember: #ffc24d;
   --danger: #e5484d;
 }
 * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
@@ -919,4 +1054,19 @@ const css = `
 .home-pr-sub { font-size: 12px; color: var(--good); margin-top: 1px; }
 .home-section-title { font-size: 11px; text-transform: uppercase; color: var(--text-dim); letter-spacing: 0.04em; margin-bottom: 8px; }
 .scheda-row--home { text-align: left; cursor: pointer; padding: 13px 14px; }
+.misura-tabs { display: flex; gap: 8px; overflow-x: auto; padding-bottom: 4px; margin-bottom: 16px; -ms-overflow-style: none; scrollbar-width: none; }
+.misura-tabs::-webkit-scrollbar { display: none; }
+.misura-tab { flex: none; background: var(--card); border: 1px solid var(--line); color: var(--text-dim); padding: 9px 16px; border-radius: 999px; font-size: 13px; font-weight: 600; cursor: pointer; white-space: nowrap; }
+.misura-tab--active { background: var(--accent); border-color: var(--accent); color: #17110a; }
+.misura-form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.misura-field { display: flex; flex-direction: column; gap: 5px; }
+.misura-field label { font-size: 11.5px; color: var(--text-dim); }
+.misura-field-input { display: flex; align-items: center; background: var(--bg); border: 1px solid var(--line); border-radius: 12px; padding: 0 10px; }
+.misura-field-input input { background: none; border: none; color: var(--text); width: 100%; padding: 10px 2px; font-family: 'Roboto Mono', monospace; font-size: 13.5px; }
+.misura-field-input input:focus { outline: none; }
+.misura-field-input span { color: var(--text-dim); font-size: 11px; }
+.misura-log-row { display: flex; align-items: flex-start; gap: 8px; padding: 12px 4px; border-bottom: 1px solid var(--line); }
+.misura-log-data { font-family: 'Roboto Mono', monospace; font-size: 12px; color: var(--text-dim); flex: none; width: 62px; padding-top: 2px; }
+.misura-log-chips { flex: 1; display: flex; flex-wrap: wrap; gap: 6px; }
+.misura-chip { background: var(--card); border: 1px solid var(--line); border-radius: 999px; padding: 4px 10px; font-size: 11.5px; color: var(--text); font-family: 'Roboto Mono', monospace; }
 `;
