@@ -126,6 +126,14 @@ export async function aggiungiEsercizioLibreria(nome) {
   if (error) throw error;
 }
 
+// programma un messaggio Telegram che verra' spedito tra `secondiDaOra` secondi
+// (gestito lato database da un cron job, funziona anche ad app chiusa)
+export async function programmaNotificaTelegram(testo, secondiDaOra) {
+  const invia_a = new Date(Date.now() + secondiDaOra * 1000).toISOString();
+  const { error } = await supabase.from("notifiche_pending").insert({ testo, invia_a });
+  if (error) throw error;
+}
+
 export async function fetchLog(esercizioNome) {
   const { data, error } = await supabase
     .from("log_carichi")

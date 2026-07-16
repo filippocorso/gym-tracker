@@ -192,6 +192,10 @@ function EsercizioCard({ esercizio, onLocalUpdate, onDelete, onStartRest, timerA
       chiediPermessoNotifiche();
       sbloccaAudio();
       onStartRest(esercizio.id, esercizio.recupero, esercizio.nome);
+      db.programmaNotificaTelegram(
+        `⏱️ Recupero terminato: ${esercizio.nome}. Via alla prossima serie!`,
+        esercizio.recupero
+      ).catch(() => {});
     }
   };
   const delSerie = (serie) => {
