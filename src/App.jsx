@@ -566,19 +566,44 @@ function VistaEsercizi({ libreria, tuttiLog, onOpen, onDelete, onAdd }) {
   );
 }
 
-function VistaHome({ schede, libreria, tuttiLog, onOpenScheda, onOpenEsercizio, onGoSchede }) {
+const DIREZIONE_MISURA_MIGLIORE = { petto: 1, bicipite_dx: 1, bicipite_sx: 1, gamba_dx: 1, gamba_sx: 1, vita: -1 };
+const LABEL_MISURA = { petto: "Petto", vita: "Vita", gamba_dx: "Gamba dx", gamba_sx: "Gamba sx", bicipite_dx: "Bicipite dx", bicipite_sx: "Bicipite sx" };
+
+function VistaHome({ schede, libreria, tuttiLog, misure, onOpenScheda, onOpenEsercizio, onOpenMisura, onGoSchede }) {
   const totSerie = schede.reduce((acc, s) => acc + contaSerie(s), 0);
   const totEsercizi = schede.reduce((acc, s) => acc + s.esercizi.length, 0);
   const suggerita = schede.find((s) => s.esercizi.length > 0) || schede[0];
 
-  let miglior = null;
+  let migliorEsercizio = null;
   libreria.forEach((nome) => {
     const st = tuttiLog.filter((r) => r.esercizio_nome === nome);
-    if (st.length > 1) {
+    if (st.length > 1 && st[0].peso > 0) {
       const delta = +(st[st.length - 1].peso - st[0].peso).toFixed(1);
-      if (!miglior || delta > miglior.delta) miglior = { nome, delta, peso: st[st.length - 1].peso };
+      if (delta > 0) {
+        const percentuale = (delta / st[0].peso) * 100;
+        if (!migliorEsercizio || percentuale > migliorEsercizio.percentuale) {
+          migliorEsercizio = { nome, delta, peso: st[st.length - 1].peso, percentuale };
+        }
+      }
     }
   });
+
+  let migliorMisura = null;
+  Object.entries(DIREZIONE_MISURA_MIGLIORE).forEach(([chiave, direzione]) => {
+    const punti = misure.filter((m) => m[chiave] !== null && m[chiave] !== undefined);
+    if (punti.length > 1 && punti[0][chiave] > 0) {
+      const deltaReale = +(punti[punti.length - 1][chiave] - punti[0][chiave]).toFixed(1);
+      const deltaBuono = deltaReale * direzione;
+      if (deltaBuono > 0) {
+        const percentuale = (deltaBuono / punti[0][chiave]) * 100;
+        if (!migliorMisura || percentuale > migliorMisura.percentuale) {
+          migliorMisura = { chiave, deltaReale, ultimo: punti[punti.length - 1][chiave], percentuale };
+        }
+      }
+    }
+  });
+
+  const usaEsercizio = migliorEsercizio && (!migliorMisura || migliorEsercizio.percentuale >= migliorMisura.percentuale);
 
   return (
     <div className="view">
@@ -598,12 +623,21 @@ function VistaHome({ schede, libreria, tuttiLog, onOpenScheda, onOpenEsercizio, 
         </button>
       )}
 
-      {miglior && (
-        <button className="home-pr" onClick={() => onOpenEsercizio(miglior.nome)}>
+      {usaEsercizio && (
+        <button className="home-pr" onClick={() => onOpenEsercizio(migliorEsercizio.nome)}>
           <TrendingUp size={16} />
           <div>
-            <div className="home-pr-title">Miglior progresso: {miglior.nome}</div>
-            <div className="home-pr-sub">+{miglior.delta} kg &middot; ora a {miglior.peso} kg</div>
+            <div className="home-pr-title">Miglior progresso: {migliorEsercizio.nome}</div>
+            <div className="home-pr-sub">+{migliorEsercizio.delta} kg &middot; ora a {migliorEsercizio.peso} kg</div>
+          </div>
+        </button>
+      )}
+      {!usaEsercizio && migliorMisura && (
+        <button className="home-pr" onClick={() => onOpenMisura(migliorMisura.chiave)}>
+          <TrendingUp size={16} />
+          <div>
+            <div className="home-pr-title">Miglior progresso: {LABEL_MISURA[migliorMisura.chiave]}</div>
+            <div className="home-pr-sub">{migliorMisura.deltaReale > 0 ? "+" : ""}{migliorMisura.deltaReale} cm &middot; ora a {migliorMisura.ultimo} cm</div>
           </div>
         </button>
       )}
@@ -678,8 +712,8 @@ function ModalNuovaMisura({ onAdd, onClose }) {
   );
 }
 
-function VistaMisure({ misure, onAdd, onDelete }) {
-  const [selezionata, setSelezionata] = useState("peso");
+function VistaMisure({ misure, metricaIniziale, onAdd, onDelete }) {
+  const [selezionata, setSelezionata] = useState(metricaIniziale || "peso");
   const [modalOpen, setModalOpen] = useState(false);
   const metrica = METRICHE.find((m) => m.chiave === selezionata);
 
@@ -765,6 +799,7 @@ export default function App() {
   const [schedaAperta, setSchedaAperta] = useState(null);
   const [esercizioAperto, setEsercizioAperto] = useState(null);
   const [logEsercizioAperto, setLogEsercizioAperto] = useState([]);
+  const [misuraIniziale, setMisuraIniziale] = useState(null);
 
   const ricaricaTutto = useCallback(async () => {
     try {
@@ -902,8 +937,10 @@ export default function App() {
         ) : esercizioAperto ? (
           <VistaEsercizioDettaglio nome={esercizioAperto} log={logEsercizioAperto} onBack={() => setEsercizioAperto(null)} />
         ) : tab === "home" ? (
-          <VistaHome schede={schede} libreria={libreria} tuttiLog={tuttiLog}
-            onOpenScheda={setSchedaAperta} onOpenEsercizio={setEsercizioAperto} onGoSchede={() => setTab("schede")} />
+          <VistaHome schede={schede} libreria={libreria} tuttiLog={tuttiLog} misure={misure}
+            onOpenScheda={setSchedaAperta} onOpenEsercizio={setEsercizioAperto}
+            onOpenMisura={(chiave) => { setMisuraIniziale(chiave); setTab("misure"); }}
+            onGoSchede={() => setTab("schede")} />
         ) : tab === "schede" ? (
           <VistaSchede schede={schede} onOpen={setSchedaAperta} onCreate={createScheda} onDelete={deleteScheda} onRename={renameScheda} />
         ) : tab === "esercizi" ? (
@@ -917,6 +954,7 @@ export default function App() {
         ) : (
           <VistaMisure
             misure={misure}
+            metricaIniziale={misuraIniziale}
             onAdd={async (valori) => { await db.aggiungiMisura(valori); await ricaricaTutto(); }}
             onDelete={async (id) => { await db.eliminaMisura(id); await ricaricaTutto(); }}
           />
@@ -927,7 +965,7 @@ export default function App() {
             <button className={`nav-btn ${tab === "home" ? "nav-btn--active" : ""}`} onClick={() => setTab("home")}><HomeIcon size={18} /><span>Home</span></button>
             <button className={`nav-btn ${tab === "schede" ? "nav-btn--active" : ""}`} onClick={() => setTab("schede")}><Dumbbell size={18} /><span>Schede</span></button>
             <button className={`nav-btn ${tab === "esercizi" ? "nav-btn--active" : ""}`} onClick={() => setTab("esercizi")}><TrendingUp size={18} /><span>Esercizi</span></button>
-            <button className={`nav-btn ${tab === "misure" ? "nav-btn--active" : ""}`} onClick={() => setTab("misure")}><Ruler size={18} /><span>Misure</span></button>
+            <button className={`nav-btn ${tab === "misure" ? "nav-btn--active" : ""}`} onClick={() => { setMisuraIniziale(null); setTab("misure"); }}><Ruler size={18} /><span>Misure</span></button>
           </nav>
         )}
       </div>
